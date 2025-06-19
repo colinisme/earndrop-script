@@ -1,0 +1,1 @@
+   85  time psql -h {host} -p 5432 -d {db} -U {user} -c "\copy earndrop_claim_detail(earndrop_id, earndrop_stage_id, leaf_index, user_address, amount, proof, status, earndrop_stage_index) FROM '/data/earndrop_data/earndrop_claim_details_20250617_151138.csv' WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '\"', ESCAPE '\');"
