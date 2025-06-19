@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"net/http"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,7 +57,7 @@ func (s *service) downloadEarndropFileDataOptimized(ctx context.Context, filePat
 	bufferedReader := bufio.NewReaderSize(fileResp.Body, 1024*1024*10)
 	reader := csv.NewReader(bufferedReader)
 
-	numWorkers := runtime.NumCPU() * 30
+	numWorkers := 1
 	batchSize := 40000
 
 	recordChan := make(chan []string, batchSize*2)
@@ -230,7 +229,7 @@ func (s *service) initEarndropRelateDbDataOptimized(
 
 	for _, stage := range earndropStageData {
 		stageIndexMap[stage.ID] = stage.Index
-		stageUnlockRatios[stage.ID] = new(big.Int).SetInt64(int64(stage.UnlockRatio * 1e6))
+		stageUnlockRatios[stage.ID] = new(big.Int).SetInt64(int64(stage.UnlockRatio * 1e8))
 	}
 
 	claimDetailList, err := s.generateClaimDetailsOptimized(
@@ -307,7 +306,7 @@ func (s *service) saveEarndropData(prefixFileName string, earndropData *DBEarndr
 		log.Err(err).Str("fileName", fileName).Msg("failed to create file")
 		return errors.WithMessage(err, "failed to create file")
 	}
-	defer file.Close()
+	defer file.Close() // nolint
 
 	data, err := json.MarshalIndent(earndropData, "", "  ")
 	if err != nil {

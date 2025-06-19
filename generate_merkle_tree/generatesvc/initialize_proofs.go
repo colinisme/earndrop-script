@@ -201,18 +201,6 @@ func (s *service) generateAndSaveMerkleProofs(
 			select {
 			case batchChan <- batch:
 				batchIndex++
-				if batchIndex%100 == 0 {
-					var m runtime.MemStats
-					runtime.ReadMemStats(&m)
-
-					log.Info().
-						Int("batchIndex", batchIndex).
-						Int("totalClaimDetails", totalClaimDetails).
-						Float64("progress", float64(i)/float64(totalClaimDetails)*100).
-						Uint64("allocMB", m.Alloc/1024/1024).
-						Float64("distributionTime", time.Since(batchDistributionStart).Seconds()).
-						Msg("proof generation batch distribution progress")
-				}
 			case <-ctx.Done():
 				log.Warn().Msg("batch distribution canceled due to context cancellation")
 				return
@@ -236,8 +224,10 @@ func (s *service) generateAndSaveMerkleProofs(
 	var processedBatches int64
 	resultStartTime := time.Now()
 
+	var resultWg sync.WaitGroup
+	resultWg.Add(1)
 	go func() {
-		defer close(resultChan)
+		defer resultWg.Done()
 		defer func() {
 			// 关闭CSV写入器
 			if csvWriter != nil {
@@ -285,14 +275,18 @@ func (s *service) generateAndSaveMerkleProofs(
 	waitStartTime := time.Now()
 	go func() {
 		wg.Wait()
+		log.Info().Msg("all workers completed, closing errorChan and resultChan")
 		close(errorChan)
+		close(resultChan) // 在workers完成后关闭resultChan
 		log.Info().
 			Float64("waitTime", time.Since(waitStartTime).Seconds()).
 			Msg(" proof generation workers completed")
 	}()
 
+	// 等待所有workers完成后再检查错误
 	errorCheckStart := time.Now()
 	errorCount := 0
+	log.Info().Msg("starting to check for errors...")
 	for err := range errorChan {
 		if err != nil {
 			errorCount++
@@ -300,6 +294,12 @@ func (s *service) generateAndSaveMerkleProofs(
 			return "", err
 		}
 	}
+	log.Info().Msg("error checking completed")
+
+	// 等待结果处理goroutine完成
+	log.Info().Msg("waiting for result processing to complete...")
+	resultWg.Wait()
+	log.Info().Msg("result processing completed")
 
 	runtime.GC()
 	var finalMemStats runtime.MemStats
@@ -316,6 +316,22 @@ func (s *service) generateAndSaveMerkleProofs(
 		Uint64("finalSysMB", finalMemStats.Sys/1024/1024).
 		Uint32("numGC", finalMemStats.NumGC).
 		Msg("proofs generation completed")
+
+	// 数据完整性验证
+	expectedCount := int64(totalClaimDetails)
+	actualCount := atomic.LoadInt64(&totalProcessed)
+	if actualCount != expectedCount {
+		log.Warn().
+			Int64("expectedCount", expectedCount).
+			Int64("actualCount", actualCount).
+			Int64("missingCount", expectedCount-actualCount).
+			Float64("completionRate", float64(actualCount)/float64(expectedCount)*100).
+			Msg("data integrity check: some claim details were not processed successfully")
+	} else {
+		log.Info().
+			Int64("processedCount", actualCount).
+			Msg("data integrity check: all claim details processed successfully")
+	}
 
 	return prefixFileName, nil
 }
@@ -348,25 +364,31 @@ func (s *service) generateAndSaveProofsWorker(
 			stageIndex := stageIndexMap[claimDetail.EarndropStageID]
 			dataBlock, err := newMerkleDataBlock(claimDetail, isEarndropV2, stageIndex)
 			if err != nil {
-				select {
-				case errorChan <- errors.WithMessage(err, "failed to create merkle data block"):
-				default:
-				}
-				return
+				log.Error().
+					Err(err).
+					Int64("earndropID", claimDetail.EarndropID).
+					Int64("earndropStageID", claimDetail.EarndropStageID).
+					Int64("leafIndex", claimDetail.LeafIndex).
+					Str("userAddress", claimDetail.UserAddress).
+					Msg("failed to create merkle data block, skipping this claim detail")
+				continue // 跳过这个claim detail，继续处理下一个
 			}
 
 			proof, err := merkleTree.Proof(dataBlock)
 			if err != nil {
-				select {
-				case errorChan <- errors.WithMessage(err, "failed to get merkle proof"):
-				default:
-				}
-				return
+				log.Error().
+					Err(err).
+					Int64("earndropID", claimDetail.EarndropID).
+					Int64("earndropStageID", claimDetail.EarndropStageID).
+					Int64("leafIndex", claimDetail.LeafIndex).
+					Str("userAddress", claimDetail.UserAddress).
+					Msg("failed to get merkle proof, skipping this claim detail")
+				continue // 跳过这个claim detail，继续处理下一个
 			}
 
 			proofSlice := make([]string, len(proof.Siblings))
-			for i, p := range proof.Siblings {
-				proofSlice[i] = hexutil.Encode(p)
+			for j, p := range proof.Siblings {
+				proofSlice[j] = hexutil.Encode(p)
 			}
 
 			batch.InsertParams[i] = &DBEarndropClaimDetail{
@@ -410,7 +432,13 @@ func (s *service) generateAndSaveProofsWorker(
 func (s *service) exportToCSVOptimized(ctx context.Context, insertParams []*DBEarndropClaimDetail, csvWriter *csvWriter, batchIndex int) error {
 	// 准备所有行数据
 	var rows [][]string
+	var skippedCount int
 	for _, param := range insertParams {
+		// 跳过nil的参数（处理失败的claim detail）
+		if param == nil {
+			skippedCount++
+			continue
+		}
 
 		proofStr := fmt.Sprintf("{%s}", strings.Join(param.Proof, ","))
 
@@ -438,6 +466,8 @@ func (s *service) exportToCSVOptimized(ctx context.Context, insertParams []*DBEa
 	log.Info().
 		Int("batchIndex", batchIndex).
 		Int("recordCount", len(insertParams)).
+		Int("exportedCount", len(rows)).
+		Int("skippedCount", skippedCount).
 		Msg("successfully exported batch to CSV file")
 
 	return nil

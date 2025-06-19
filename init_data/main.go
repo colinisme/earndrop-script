@@ -65,7 +65,7 @@ func generateUniqueEVMAddresses(count int) []string {
 
 func main() {
 	// 设置要生成的数据条数
-	recordCount := 3000000
+	recordCount := 1000000
 
 	// 读取claim_11.csv的数据
 	fmt.Printf("读取claim_11.csv数据...\n")
@@ -116,7 +116,7 @@ func main() {
 	if err != nil {
 		log.Fatal("创建CSV文件失败:", err)
 	}
-	defer file.Close()
+	defer file.Close() //nolint
 
 	// 创建CSV writer
 	writer := csv.NewWriter(file)

@@ -205,7 +205,7 @@ func (s *service) generateClaimDetailsWorkerOptimized(
 			for _, stage := range earndropStageData {
 				unlockRatioBig := stageUnlockRatios[stage.ID]
 				unlockAmount := new(big.Int).Mul(totalAmount, unlockRatioBig)
-				unlockAmount = unlockAmount.Div(unlockAmount, big.NewInt(1e6))
+				unlockAmount = unlockAmount.Div(unlockAmount, big.NewInt(1e8))
 
 				claimDetail := &DBEarndropClaimDetail{
 					EarndropID:      earndropData.ID,

@@ -86,7 +86,7 @@ func (s *Service) readCSVFile(filename string) ([]CSVRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer file.Close() // nolint
 
 	reader := csv.NewReader(file)
 

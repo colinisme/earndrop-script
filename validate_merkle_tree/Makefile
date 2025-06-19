@@ -4,4 +4,4 @@ build:
     CGO_ENABLED=0 \
     GOOS=linux \
     GOARCH=amd64 \
-	go build -o ./bin/validate ./main.go
+	go build -o ./bin/validate_merkle_tree ./main.go
