@@ -1,0 +1,1 @@
+# earndrop-script
