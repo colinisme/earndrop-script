@@ -228,10 +228,24 @@ func (s *service) initEarndropRelateDbDataOptimized(
 		return err
 	}
 
+	originIndexCount := make(map[int64]int)
+	lastOriginIndex := int64(0)
 	for i, detail := range claimDetailList {
 		if i != int(detail.LeafIndex) {
 			return errors.Errorf("claim detail leaf index mismatch: expected %d, got %d", i, detail.LeafIndex)
 		}
+		originIndexCount[detail.OriginIndex]++
+
+		if originIndexCount[detail.OriginIndex] > len(s.stages) {
+			return errors.Errorf("origin index %d has too many claim details: %d", detail.OriginIndex, originIndexCount[detail.OriginIndex])
+		}
+
+		if i > 0 {
+			if detail.OriginIndex < lastOriginIndex {
+				return errors.Errorf("claim detail origin index out of order: expected >= %d, got %d", lastOriginIndex, detail.OriginIndex)
+			}
+		}
+
 	}
 
 	log.Info().Int("claimDetails", len(claimDetailList)).Dur("elapsed", time.Since(startTime)).Msg("claim details generated")

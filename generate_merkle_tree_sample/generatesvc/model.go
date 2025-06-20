@@ -48,4 +48,6 @@ type DBEarndropClaimDetail struct {
 	Status             EarndropClaimDetailStatus `json:"status"`
 	ClaimFee           pgtype.Numeric            `json:"claim_fee"`
 	EarndropStageIndex int64                     `json:"earndrop_stage_index"`
+
+	OriginIndex int64 `json:"origin_index"`
 }

@@ -257,6 +257,8 @@ func (s *service) generateClaimDetailsWorkerOptimized(
 					Amount:          unlockAmount,
 					Proof:           nil, // will be set later
 					Status:          EarndropClaimDetailStatusGenerated,
+
+					OriginIndex: userData.Index,
 				}
 				batch = append(batch, claimDetail)
 			}
