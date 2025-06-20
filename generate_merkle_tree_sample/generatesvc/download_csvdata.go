@@ -228,6 +228,12 @@ func (s *service) initEarndropRelateDbDataOptimized(
 		return err
 	}
 
+	for i, detail := range claimDetailList {
+		if i != int(detail.LeafIndex) {
+			return errors.Errorf("claim detail leaf index mismatch: expected %d, got %d", i, detail.LeafIndex)
+		}
+	}
+
 	log.Info().Int("claimDetails", len(claimDetailList)).Dur("elapsed", time.Since(startTime)).Msg("claim details generated")
 
 	merkleTree, err := s.initEarndropMerkleTreeOptimized(ctx, claimDetailList, true, stageIndexMap) //强制使用V2版本的合约
