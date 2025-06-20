@@ -229,7 +229,7 @@ func (s *service) initEarndropRelateDbDataOptimized(
 
 	for _, stage := range earndropStageData {
 		stageIndexMap[stage.ID] = stage.Index
-		stageUnlockRatios[stage.ID] = new(big.Int).SetInt64(int64(stage.UnlockRatio * 1e8))
+		stageUnlockRatios[stage.ID] = new(big.Int).SetInt64(int64(stage.UnlockRatio * 1e12))
 	}
 
 	claimDetailList, err := s.generateClaimDetailsOptimized(
@@ -251,11 +251,10 @@ func (s *service) initEarndropRelateDbDataOptimized(
 		return nil, errors.WithMessage(err, "failed to init earndrop merkle tree")
 	}
 
-	log.Info().Float64("elapsed", time.Since(startTime).Seconds()).Msg("merkle tree initialized")
-
 	// 4. 更新earndrop数据
 	newEarndropData := earndropData
 	newEarndropData.MerkleTreeHashRoot = hexutil.Encode(merkleTree.Root)
+	log.Info().Float64("elapsed", time.Since(startTime).Seconds()).Any("earndropData", earndropData).Msg("merkle tree initialized")
 
 	// 5. 并发生成Merkle proofs 并且存到db里面
 	prefixFileName, err := s.generateAndSaveMerkleProofs(ctx, claimDetailList, merkleTree, earndropData.DistributionInfo.IsEarndropV2, stageIndexMap, ".")

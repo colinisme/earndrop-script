@@ -35,8 +35,8 @@ func (s *service) generateClaimDetailsOptimized(
 
 	allClaimDetails := make([]*DBEarndropClaimDetail, 0, expectedTotal)
 
-	numWorkers := runtime.NumCPU() * 6 // 减少worker数量
-	batchSize := 5000                  // 更小的批次大小
+	numWorkers := 1   // 减少worker数量
+	batchSize := 5000 // 更小的批次大小
 
 	log.Info().
 		Int("numWorkers", numWorkers).
@@ -109,11 +109,15 @@ func (s *service) generateClaimDetailsOptimized(
 	completedBatches := 0
 	totalClaimDetails := 0
 
+	// 按照用户地址顺序重新组织claim details
+	// 每个用户的所有stage应该有连续的leafIndex
+	userClaimDetailsMap := make(map[string][]*DBEarndropClaimDetail)
+
 	for batch := range resultChan {
-		// 更新leaf index
+		// 按用户地址分组claim details
 		for _, detail := range batch {
-			detail.LeafIndex = leafIndex
-			leafIndex++
+			userAddress := detail.UserAddress
+			userClaimDetailsMap[userAddress] = append(userClaimDetailsMap[userAddress], detail)
 		}
 
 		allClaimDetails = append(allClaimDetails, batch...)
@@ -140,6 +144,55 @@ func (s *service) generateClaimDetailsOptimized(
 				Msg("memory-optimized claim details generation progress")
 		}
 	}
+
+	// 按照原始CSV中的用户顺序重新分配leafIndex
+	log.Info().Msg("reorganizing claim details by user address order...")
+
+	// 清空allClaimDetails，重新按用户顺序构建
+	allClaimDetails = allClaimDetails[:0]
+
+	// 按照原始CSV中的用户顺序遍历
+	processedUsers := 0
+	for _, userData := range earndropFileData {
+		userAddress := strings.ToLower(userData.UserAddress)
+		if earndropData.Chain == rickChain.Solana.String() || earndropData.Chain == rickChain.Solana_Devnet.String() {
+			userAddress = userData.UserAddress
+		}
+
+		userDetails, exists := userClaimDetailsMap[userAddress]
+		if !exists {
+			log.Warn().Str("userAddress", userAddress).Msg("user address not found in claim details map")
+			continue
+		}
+
+		// 记录前几个用户的leafIndex分配情况（用于验证）
+		if processedUsers < 3 {
+			log.Info().
+				Str("userAddress", userAddress).
+				Int("stageCount", len(userDetails)).
+				Int64("startLeafIndex", leafIndex).
+				Int64("endLeafIndex", leafIndex+int64(len(userDetails))-1).
+				Msg("leafIndex allocation for user")
+		}
+
+		// 为这个用户的所有stage分配连续的leafIndex
+		for _, detail := range userDetails {
+			detail.LeafIndex = leafIndex
+			leafIndex++
+			allClaimDetails = append(allClaimDetails, detail)
+		}
+
+		processedUsers++
+	}
+
+	log.Info().
+		Int("processedUsers", processedUsers).
+		Int64("totalLeafIndex", leafIndex).
+		Msg("leafIndex reorganization completed")
+
+	// 清理内存
+	userClaimDetailsMap = nil
+	runtime.GC()
 
 	log.Info().
 		Int("completedBatches", completedBatches).
@@ -205,7 +258,7 @@ func (s *service) generateClaimDetailsWorkerOptimized(
 			for _, stage := range earndropStageData {
 				unlockRatioBig := stageUnlockRatios[stage.ID]
 				unlockAmount := new(big.Int).Mul(totalAmount, unlockRatioBig)
-				unlockAmount = unlockAmount.Div(unlockAmount, big.NewInt(1e8))
+				unlockAmount = unlockAmount.Div(unlockAmount, big.NewInt(1e12))
 
 				claimDetail := &DBEarndropClaimDetail{
 					EarndropID:      earndropData.ID,

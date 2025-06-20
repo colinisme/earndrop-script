@@ -147,7 +147,7 @@ func (s *service) generateAndSaveMerkleProofs(
 	log.Info().Str("filepath", filepath).Msg("CSV file created and headers written")
 
 	batchSize := 5000
-	numWorkers := runtime.NumCPU() * 30
+	numWorkers := 1
 
 	log.Info().
 		Int("numWorkers", numWorkers).

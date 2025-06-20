@@ -1,8 +1,10 @@
 package generatesvc
 
 import (
+	"bytes"
 	"context"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 
@@ -41,17 +43,48 @@ func (s *service) initEarndropMerkleTreeOptimized(
 
 	log.Info().Int("dataBlocks", len(leafDataBlocks)).Float64("elapsed", time.Since(startTime).Seconds()).Msg("data blocks generated")
 
+	// To match the Rust implementation, we must sort the leaf nodes by their hash before building the tree.
+	hashFunc := func(data []byte) ([]byte, error) {
+		hash := crypto.Keccak256Hash(data)
+		return hash.Bytes(), nil
+	}
+
+	log.Info().Msg("sorting leaf nodes by hash")
+	sortStartTime := time.Now()
+	type blockWithHash struct {
+		block mt.DataBlock
+		hash  []byte
+	}
+	blocksWithHashes := make([]blockWithHash, len(leafDataBlocks))
+	for i, block := range leafDataBlocks {
+		serialized, err := block.Serialize()
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to serialize block for sorting")
+		}
+		hash, err := hashFunc(serialized)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to hash block for sorting")
+		}
+		blocksWithHashes[i] = blockWithHash{block: block, hash: hash}
+	}
+	sort.Slice(blocksWithHashes, func(i, j int) bool {
+		return bytes.Compare(blocksWithHashes[i].hash, blocksWithHashes[j].hash) < 0
+	})
+	sortedLeafDataBlocks := make([]mt.DataBlock, len(leafDataBlocks))
+	for i, bwh := range blocksWithHashes {
+		sortedLeafDataBlocks[i] = bwh.block
+	}
+	log.Info().Float64("elapsed", time.Since(sortStartTime).Seconds()).Msg("leaf nodes sorted")
+	leafDataBlocks = sortedLeafDataBlocks
+
 	// 2. Merkle树创建
 	treeStartTime := time.Now()
 	tree, err := mt.New(&mt.Config{
-		HashFunc: func(addressByte []byte) ([]byte, error) {
-			hash := crypto.Keccak256Hash(addressByte)
-			return hash.Bytes(), nil
-		},
-		Mode:             mt.ModeTreeBuild,
-		SortSiblingPairs: true,
-		RunInParallel:    true,
-		NumRoutines:      runtime.NumCPU() * 50, // 使用更多goroutine
+		HashFunc:         hashFunc,
+		Mode:             mt.ModeProofGenAndTreeBuild,
+		SortSiblingPairs: false,
+		RunInParallel:    false,
+		NumRoutines:      1,
 	}, leafDataBlocks)
 
 	if err != nil {
@@ -81,7 +114,7 @@ func (s *service) generateDataBlocksConcurrent(
 	stageIndexMap map[int64]int64,
 ) ([]mt.DataBlock, error) {
 
-	numWorkers := runtime.NumCPU() * 10
+	numWorkers := 1
 	batchSize := len(claimDetailList) / numWorkers
 	if batchSize < 1000 {
 		batchSize = 1000
