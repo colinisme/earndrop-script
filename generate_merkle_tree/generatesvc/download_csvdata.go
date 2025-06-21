@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -244,6 +245,10 @@ func (s *service) initEarndropRelateDbDataOptimized(
 	}
 
 	log.Info().Int("claimDetails", len(claimDetailList)).Dur("elapsed", time.Since(startTime)).Msg("claim details generated")
+
+	sort.Slice(claimDetailList, func(i, j int) bool {
+		return claimDetailList[i].LeafIndex < claimDetailList[j].LeafIndex
+	})
 
 	merkleTree, err := s.initEarndropMerkleTreeOptimized(ctx, claimDetailList, earndropData.DistributionInfo.IsEarndropV2, stageIndexMap)
 	if err != nil {
