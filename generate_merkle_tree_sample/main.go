@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	earndropId := int64(1)
+	earndropId := int64(500000)
 	stages := []generatesvc.DBEarndropStage{
 		{
 			ID:          1,
@@ -61,7 +61,7 @@ func main() {
 
 	fmt.Println(ratio)
 
-	earndropSvc := generatesvc.NewService(earndropId, stages, "./sahara-airdrop-3.csv")
+	earndropSvc := generatesvc.NewService(earndropId, stages, "./sahara-airdrop-5.csv")
 
 	ctx := context.Background()
 	_ = earndropSvc.InitEarndropData(ctx)

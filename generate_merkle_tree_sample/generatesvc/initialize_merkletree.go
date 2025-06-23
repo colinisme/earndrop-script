@@ -1,10 +1,8 @@
 package generatesvc
 
 import (
-	"bytes"
 	"context"
 	"runtime"
-	"sort"
 	"sync"
 	"time"
 
@@ -50,41 +48,15 @@ func (s *service) initEarndropMerkleTreeOptimized(
 	}
 
 	log.Info().Msg("sorting leaf nodes by hash")
-	sortStartTime := time.Now()
-	type blockWithHash struct {
-		block mt.DataBlock
-		hash  []byte
-	}
-	blocksWithHashes := make([]blockWithHash, len(leafDataBlocks))
-	for i, block := range leafDataBlocks {
-		serialized, err := block.Serialize()
-		if err != nil {
-			return nil, errors.WithMessage(err, "failed to serialize block for sorting")
-		}
-		hash, err := hashFunc(serialized)
-		if err != nil {
-			return nil, errors.WithMessage(err, "failed to hash block for sorting")
-		}
-		blocksWithHashes[i] = blockWithHash{block: block, hash: hash}
-	}
-	sort.Slice(blocksWithHashes, func(i, j int) bool {
-		return bytes.Compare(blocksWithHashes[i].hash, blocksWithHashes[j].hash) < 0
-	})
-	sortedLeafDataBlocks := make([]mt.DataBlock, len(leafDataBlocks))
-	for i, bwh := range blocksWithHashes {
-		sortedLeafDataBlocks[i] = bwh.block
-	}
-	log.Info().Float64("elapsed", time.Since(sortStartTime).Seconds()).Msg("leaf nodes sorted")
-	leafDataBlocks = sortedLeafDataBlocks
 
 	// 2. Merkle树创建
 	treeStartTime := time.Now()
 	tree, err := mt.New(&mt.Config{
 		HashFunc:         hashFunc,
-		Mode:             mt.ModeProofGenAndTreeBuild,
-		SortSiblingPairs: false,
-		RunInParallel:    false,
-		NumRoutines:      1,
+		Mode:             mt.ModeTreeBuild,
+		SortSiblingPairs: true,
+		RunInParallel:    true,
+		NumRoutines:      50,
 	}, leafDataBlocks)
 
 	if err != nil {
